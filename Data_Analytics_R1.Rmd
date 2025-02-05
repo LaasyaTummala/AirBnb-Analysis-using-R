@@ -1,0 +1,254 @@
+---
+title: "Data_Analytics_R1"
+output: html_document
+date: "2024-04-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Data Preprocessing & one-hot-encoding
+
+```{r}
+remove(list=ls())
+
+library(readr)
+library(stringr)
+
+set.seed(1)
+df = read.csv("G:/semester_2/data_analytics/PROJECT/airbnb-recruiting-new-user-bookings/train_users_2.csv/train_users_2.csv")
+labels = df['country_destination']
+head(df)
+```
+```{r}
+df = df[-c(which(colnames(df) %in% c('date_first_booking')))]
+```
+```{r}
+for(i in 1:ncol(df)){
+  df[is.na(df[,i]), i] <- mean(df[,i], na.rm = TRUE)
+}
+
+df$age <- as.integer(df$age) 
+```
+```{r}
+dac = as.data.frame(str_split_fixed(df$date_account_created, '-', 3))
+df['dac_year'] = dac[,1]
+df['dac_month'] = dac[,2]
+df['dac_day'] = dac[,3]
+df = df[,-c(which(colnames(df) %in% c('date_account_created')))]
+```
+```{r}
+
+# Check if 'timestamp_first_active' exists before proceeding
+if('timestamp_first_active' %in% colnames(df)) {
+  df[,'tfa_year'] = substring(as.character(df[,'timestamp_first_active']), 1, 4)
+  df['tfa_month'] = substring(as.character(df['timestamp_first_active']), 5, 6)
+  df['tfa_day'] = substring(as.character(df['timestamp_first_active']), 7, 8)
+
+  # Now you can safely remove 'timestamp_first_active'
+  df = df[,-c(which(colnames(df) %in% c('timestamp_first_active')))]
+} else {
+  print("Column 'timestamp_first_active' does not exist in dataframe.")
+}
+
+```
+```{r}
+library(caret)
+ohe_feats = c('country_destination')
+dummies <- dummyVars(~ country_destination, data = df)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = df))
+df_combined <- cbind(df[,-c(which(colnames(df) %in% ohe_feats))],df_all_ohe)
+
+colnames(df_combined)
+
+names(df_combined)[30]<-"US"
+names(df_combined)[29]<-"PT"
+names(df_combined)[28]<-"Other"
+names(df_combined)[27]<-"NL"
+names(df_combined)[26]<-"NDF"
+names(df_combined)[25]<-"IT"
+names(df_combined)[24]<-"GB"
+names(df_combined)[23]<-"FR"
+names(df_combined)[22]<-"ES"
+names(df_combined)[21]<-"DE"
+names(df_combined)[20]<-"CA"
+names(df_combined)[19]<-"AU"
+```
+```{r}
+df_final <- df_combined[-c(19:29)]
+head(df_final)
+```
+## Visulalisation
+```{r}
+library(ggplot2)
+library(data.table)
+library(tidyverse)
+data <- fread("G:/semester_2/data_analytics/PROJECT/airbnb-recruiting-new-user-bookings/train_users_2.csv/train_users_2.csv")
+data <- as.data.frame(data)
+boxplot(data$age)
+#outlier
+remove_outliers <- function(x, na.rm = TRUE, ...) {
+  qnt <- quantile(x, probs=c(.25, .75), na.rm = na.rm, ...)
+  H <- 1.5 * IQR(x, na.rm = na.rm)
+  y <- x
+  y[x < (qnt[1] - H)] <- NA
+  y[x > (qnt[2] + H)] <- NA
+  y
+}
+data$age <- remove_outliers(data$age)
+```
+```{r}
+ggplot(data,aes(age))+
+  geom_histogram(bins=50)+
+  theme_bw()
+
+# app
+signup_app <- table(data$signup_app) %>%
+  as.data.frame()
+ggplot(signup_app,aes(Var1,Freq,fill=Var1))+
+  geom_bar(stat="identity")+
+  theme_bw()+
+  theme(legend.position = "none")+
+  xlab("signup app")
+```
+```{r}
+ggplot(data,aes(age,signup_flow))+
+  geom_point()
+gender <- table(data$country_destination,data$gender) %>%
+  as.data.frame()
+
+ggplot(gender,aes(Var2,Freq))+
+  geom_bar(stat="identity")+
+  facet_wrap(~Var1)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle=90))+
+  xlab("Gender")
+```
+## KNN Algorithm
+```{r}
+Airbnb <-(df_final)
+                colClasses=c("id"="factor","gender"="factor","age"="factor",
+                                "signup_method"="factor","signup_flow"="factor","language"="factor",
+                                "affiliate_channel"="factor","affiliate_provider"="factor","first_affiliate_tracked"="factor",
+                                "signup_app"="factor","first_device_type"="factor","first_browser"="factor",
+                                "dac_year"="factor","dac_month"="factor","dac_day"="factor",
+                                "tfa_year"="factor","tfa_month"="factor","tfa_day"="factor","US"="factor")
+```
+```{r}
+index <-seq(1, nrow(Airbnb), by = 3)
+
+test <- Airbnb[index,]
+train <- Airbnb[-index,]
+dim(Airbnb)
+dim(test)
+dim(train)
+head(Airbnb)
+head(train)
+head(test)
+str(train)
+
+```
+```{r}
+
+
+
+# After setting preference, you can run your kknn model
+library(kknn)
+predict <- kknn(factor(US)~gender+age+signup_method+signup_flow+affiliate_channel+first_affiliate_tracked+signup_app+first_device_type+dac_year+dac_month+dac_day+tfa_year, train, test, kernel="rectangular", k=10)
+fit <- fitted(predict)
+table(kknn=fit, test$US)
+knn_error_rate = sum(fit != test$US) / length(test$US)
+print(knn_error_rate)
+accuracy <- (1 - knn_error_rate) * 100
+accuracy
+ 
+```
+## RandomForest Algorithm
+```{r}
+library(randomForest)
+Airbnb <- df_final
+set.seed(123)
+head(Airbnb)
+#dsn2<-na.omit(dsn)
+#set.seed(123)
+
+index <-seq(1, nrow(Airbnb), by = 3)
+Airbnb <- Airbnb[index,]
+
+index <-seq(1, nrow(Airbnb), by = 5)
+test <- Airbnb[index,]
+train <- Airbnb[-index,]
+train<- train[c(2,3,13,16,19)]
+test<-test[c(2,3,13,16,19)]
+
+#train$Reverse <- as.character(train$Reverse)
+#train$US <- as.factor(train$US)
+
+x<-randomForest(factor(US)~.,data=test, importance=TRUE, ntree=1000)
+importance(x)
+varImpPlot(x)
+```
+```{R}
+Prediction<-predict(x,test)
+table(actual=test[,5],Prediction)
+
+wrong<-(test[,5]!=Prediction)
+error_rate<-sum(wrong)/length(wrong)
+error_rate
+accuracy <- (1-error_rate)*100
+accuracy
+
+```
+
+```{r}
+Airbnb <-(df_final)
+                colClasses=c("id"="factor","gender"="factor","age"="factor",
+                                "signup_method"="factor","signup_flow"="factor","language"="factor",
+                                "affiliate_channel"="factor","affiliate_provider"="factor","first_affiliate_tracked"="factor",
+                                "signup_app"="factor","first_device_type"="factor","first_browser"="factor",
+                                "dac_year"="factor","dac_month"="factor","dac_day"="factor",
+                                "tfa_year"="factor","tfa_month"="factor","tfa_day"="factor","US"="factor")
+```
+
+```{r}
+index <-seq(1, nrow(Airbnb), by = 3)
+
+test <- Airbnb[index,]
+train <- Airbnb[-index,]
+dim(Airbnb)
+dim(test)
+dim(train)
+head(Airbnb)
+head(train)
+head(test)
+```
+```{r}
+
+library(naivebayes)
+
+# Split the data into training and testing sets
+set.seed(123)
+index <- seq(1, nrow(Airbnb), by = 3)
+test <- Airbnb[index,]
+train <- Airbnb[-index,]
+head(train)
+head(test)
+```
+```{r}
+
+# Fit Naive Bayes model
+nb_model <- naive_bayes(factor(US)~age+gender+signup_method+language+dac_year+affiliate_channel+first_device_type+signup_flow+signup_app+affiliate_provider, data = train)
+
+# Make predictions on the test set
+predictions <- predict(nb_model, test)
+
+# Evaluate the performance of the model
+conf_matrix <- table(predictions, test$US)
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+#print(conf_matrix)
+cat("Accuracy:", accuracy, "\n")
+accuracy_percentage <- accuracy*100
+accuracy_percentage
+
+```
+
